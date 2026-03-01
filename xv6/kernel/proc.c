@@ -148,6 +148,7 @@ found:
 
   // Set up memmory mapping fields
   p->num_mappings = 0;
+  p->num_shared = 0;
 
   return p;
 }
@@ -258,7 +259,7 @@ growproc(int n)
 }
 
 // Create a new process, copying the parent.
-// Sets up child kernel stack to return as if from fork() system call. TODO: I stopped task 1 before doing this
+// Sets up child kernel stack to return as if from fork() system call.
 int
 kfork(void)
 {
@@ -270,6 +271,10 @@ kfork(void)
   if((np = allocproc()) == 0){
     return -1;
   }
+
+  // Initialize child process memory variables
+  np->num_mappings = p->num_shared;
+  np->num_shared = p->num_shared; // TODO: Figure out what to do with this behaviour?
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){

@@ -111,5 +111,6 @@ struct proc {
   // mmap variables
   uint64 mmappings[MAX_MMAPS]; // TODO: Addresses of each memory mapping (should be consistent in process since in kernel memory)
   int num_mappings; // Number of memory mappings
+  int num_shared; // Number of shared mappings
 };
 
