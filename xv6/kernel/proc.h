@@ -106,4 +106,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+                               //
+
+  // mmap variables
+  uint64 mmappings[MAX_MMAPS]; // TODO: Addresses of each memory mapping (should be consistent in process since in kernel memory)
+  int num_mappings; // Number of memory mappings
 };
+

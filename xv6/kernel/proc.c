@@ -146,6 +146,9 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Set up memmory mapping fields
+  p->num_mappings = 0;
+
   return p;
 }
 
@@ -255,7 +258,7 @@ growproc(int n)
 }
 
 // Create a new process, copying the parent.
-// Sets up child kernel stack to return as if from fork() system call.
+// Sets up child kernel stack to return as if from fork() system call. TODO: I stopped task 1 before doing this
 int
 kfork(void)
 {
