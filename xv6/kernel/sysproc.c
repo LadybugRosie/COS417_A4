@@ -112,7 +112,10 @@ uint64
 sys_getmmapinfo(void)
 {
   // TODO: implement!
-  return 0;
+  uint64 addr;
+  argaddr(0, &addr);
+  return mmapinfo(addr);
+
 }
 
 uint64

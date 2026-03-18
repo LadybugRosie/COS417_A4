@@ -696,3 +696,26 @@ procdump(void)
     printf("\n");
   }
 }
+
+// The getmmapinfo() system call provides information about 
+// the current memory mappings of a process. It accepts a 
+// pointer, which it fills with info on total_mmaps, the 
+// starting address of each, the size of each mapping, and 
+// the number of pages physically realized for all mappings.
+int mmapinfo(uint64 addr) {
+  struct proc *p = myproc();
+  struct mmapinfo mmapinfo_tmp;
+  int curr_map = 0;
+
+  mmapinfo_tmp.total_mmaps = p->num_mappings;
+  while (curr_map < mmapinfo_tmp.total_mmaps) {
+    mmapinfo_tmp.addr[curr_map] = (void*) p->mmappings[curr_map];
+    mmapinfo_tmp.length[curr_map] = p->length[curr_map];
+    mmapinfo_tmp.n_loaded_pages[curr_map] = p->n_loaded_pages[curr_map];
+    curr_map++;
+  }
+  if (copyout(p->pagetable, addr, (char*)&mmapinfo_tmp, sizeof(struct mmapinfo))<0) {
+    return -1; 
+  } 
+  return 0;
+}
