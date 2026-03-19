@@ -493,19 +493,16 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     area = m->area;
     page_idx = (page_va - m->addr) / PGSIZE;
 
-    acquire(&area->lock);
     mem = area->phys_pages[page_idx];
     if(mem == 0){
       mem = (uint64)kalloc();
       if(mem == 0){
-        release(&area->lock);
         return 0;
       }
       memset((void *)mem, 0, PGSIZE);
       area->phys_pages[page_idx] = (uint)mem;
       area->loaded_pages++;
     }
-    release(&area->lock);
 
     if(mappages(pagetable, page_va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0){
       if(ismapped(pagetable, page_va))

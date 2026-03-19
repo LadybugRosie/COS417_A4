@@ -17,3 +17,20 @@ struct mmapinfo {
     uint64 n_loaded_pages[MAX_MMAPS]; // Number of pages physically loaded into
                                       // memory across all mappings
 };
+
+// Shared backing object for a single mmap'd region.
+struct mmap_area {
+  uint64 ref_count;           // Number of processes referencing this mapping
+  uint64 length;              // Rounded-up mapping length in bytes
+  uint64 page_count;          // Rounded-up mapping length in pages
+  uint64 loaded_pages;        // Number of pages realized
+  uint flags;                 // Map flags for this region
+  uint phys_pages[MAX_PAGES]; // Realized physical page addresses, 0 if absent
+};
+
+// Per-process mmap metadata.
+struct proc_mmap {
+  uint64 addr;             // Start address in this process
+  struct mmap_area *area;  // Shared memory backing object
+};
+
