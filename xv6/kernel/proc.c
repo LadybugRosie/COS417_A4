@@ -26,12 +26,12 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
-static void
-proc_initmmaps(struct proc *p)
-{
-  memset(p->mmaps, 0, sizeof(p->mmaps));
-  p->num_mmaps = 0;
-}
+//static void
+//proc_initmmaps(struct proc *p)
+//{
+//  memset(p->mmaps, 0, sizeof(p->mmaps));
+//  p->num_mmaps = 0;
+//}
 
 static int
 ranges_overlap(uint64 start1, uint64 end1, uint64 start2, uint64 end2)
@@ -250,10 +250,6 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  // Set up memmory mapping fields
-  p->num_mappings = 0;
-  p->num_shared = 0;
-
   return p;
 }
 
@@ -455,8 +451,6 @@ kmmap(uint64 addr, uint64 length, int flags)
   uint64 chosen;
 
   if((flags & (MAP_SHARED | MAP_ANONYMOUS)) != (MAP_SHARED | MAP_ANONYMOUS))
-    return 0;
-  if((flags & ~MAP_SUPPORTED) != 0)
     return 0;
   if(length == 0)
     return 0;

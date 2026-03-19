@@ -32,16 +32,4 @@ struct mmap_area {
 struct proc_mmap {
   uint64 addr;             // Start address in this process
   struct mmap_area *area;  // Shared memory backing object
-}
-
-// TODO: Remove
-//
-// Per-memory mapping state
-//struct memmap {
-  //int mid; // Mapping ID
-//
-//  uint64 ref_count; // Number of processes referencing this map
-//  uint64 page_count; // Number of pages in this mapping
-  // uint64 phys_pages[MAX_PAGES]; // If alloced non-zero, physical addresses of allocated pages
-
-//};
+};
