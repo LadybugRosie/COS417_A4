@@ -47,7 +47,10 @@ sys_sbrk(void)
   argint(0, &n);
   argint(1, &t);
   addr = myproc()->sz;
-  newsz = addr + n;
+  if (n < 0 && (uint64)(-n) > addr)
+    newsz = 0;
+  else
+    newsz = addr + n;
   if(cangrowproc(addr, newsz) == 0)
     return -1;
 

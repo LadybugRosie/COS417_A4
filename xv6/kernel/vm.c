@@ -469,13 +469,13 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   uint64 page_va;
   uint64 page_idx;
   uint64 mem;
-
-  (void)read;
+  pte_t *pte;
 
   if(va >= MAXVA)
     return 0;
 
   page_va = PGROUNDDOWN(va);
+  pte = walk(pagetable, page_va, 0);
 
   for(int i = 0; i < p->num_mmaps; i++){
     uint64 start = p->mmaps[i].addr;
@@ -487,8 +487,11 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   }
 
   if(m != 0){
-    if(ismapped(pagetable, page_va))
-      return walkaddr(pagetable, page_va);
+    if(ismapped(pagetable, page_va)) {
+      if (read || (*pte & PTE_W))
+        return walkaddr(pagetable, page_va);
+      return 0;
+    }
 
     area = m->area;
     page_idx = (page_va - m->addr) / PGSIZE;
@@ -515,7 +518,9 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   if (va >= p->sz)
     return 0;
   if(ismapped(pagetable, page_va)) {
-    return walkaddr(pagetable, page_va);
+    if (read || (*pte & PTE_W))
+      return walkaddr(pagetable, page_va);
+    return 0;
   }
   mem = (uint64) kalloc();
   if(mem == 0)
