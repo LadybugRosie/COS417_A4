@@ -47,6 +47,9 @@ sys_sbrk(void)
   argint(0, &n);
   argint(1, &t);
   addr = myproc()->sz;
+  newsz = addr + n;
+  if(cangrowproc(addr, newsz) == 0)
+    return -1;
 
   if(t == SBRK_EAGER || n < 0) {
     if(growproc(n) < 0) {
@@ -56,11 +59,6 @@ sys_sbrk(void)
     // Lazily allocate memory for this process: increase its memory
     // size but don't allocate memory. If the processes uses the
     // memory, vmfault() will allocate it.
-    newsz = addr + n;
-    if(newsz < addr)
-      return -1;
-    if(cangrowproc(addr, newsz) == 0)
-      return -1;
     myproc()->sz = newsz;
   }
   return addr;

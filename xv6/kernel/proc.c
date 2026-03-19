@@ -36,7 +36,7 @@ struct spinlock wait_lock;
 static int
 ranges_overlap(uint64 start1, uint64 end1, uint64 start2, uint64 end2)
 {
-  return start1 < end2 && start2 < end1;
+  return 1 - ((end1 <= start2) || (end2 <= start1));
 }
 
 static void
@@ -424,10 +424,10 @@ cangrowproc(uint64 oldsz, uint64 newsz)
   for(int i = 0; i < p->num_mmaps; i++){
     uint64 map_start = p->mmaps[i].addr;
     uint64 map_end = map_start + p->mmaps[i].area->length;
-    if(ranges_overlap(oldsz, newsz, map_start, map_end))
+    if(ranges_overlap(0, newsz, map_start, map_end))
+      // cannot grow if: newsz < map_start
       return 0;
   }
-
   return 1;
 }
 
