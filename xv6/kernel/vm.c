@@ -1,10 +1,10 @@
 /*--------------------------------------------------------------------*/
 /* COS417 Assignment 4 - MMAP                                         */
-/* Author: Your Name Here                                             */
-/* netID: Your netID Here                                             */
-/* AI disclosure: Did you use AI for this assignment? Yes or No.      */
-/* AI explanation: If you answered yes to previous question, please   */
-/* describe your usage.                                               */
+/* Author: Jonathan Liu, David Hovey                                  */
+/* netID: jl0796, dh7965                                              */
+/* AI disclosure: Did you use AI for this assignment? Yes.            */
+/* AI explanation: We used T5 to help us understand the xv6           */
+/* kernel's page table structure and how to implement mmap.           */
 /*--------------------------------------------------------------------*/
 
 #include "param.h"
