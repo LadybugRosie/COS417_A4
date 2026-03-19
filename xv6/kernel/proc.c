@@ -719,3 +719,32 @@ int mmapinfo(uint64 addr) {
   } 
   return 0;
 }
+
+
+int munmap(void* addr) {
+  struct proc *p = myproc();
+  struct proc_mmap* mappings = p->mmaps;
+  struct proc_mmap* map_to_remove;
+  for (int i = 0; i < MAX_MMAPS; i++) {
+    map_to_remove = &mappings[i];
+    if ((void *) map_to_remove->addr == addr) {
+      struct mmap_area *area = map_to_remove->area;
+      if (area->ref_count == 1) { 
+        // remove it 
+        uvmunmap(p->pagetable, (uint64) map_to_remove->addr, map_to_remove->length / PGSIZE, 1); // 1 means do_free.
+      } else {
+        // decrement by 1.
+        map_to_remove->ref_count--;
+        p->mmaps[i] = NULL;
+        p->num_mmaps--;
+      }
+      return 0;
+    }
+  }
+
+  p->memmappings[addr] = 0;
+  p->length[addr] = 0;
+  p->n_loaded_pages[addr] = 0;
+  p->num_mappings--;
+  return 0;
+}
