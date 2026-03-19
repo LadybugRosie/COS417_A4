@@ -101,7 +101,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
-int             mmapinfo(uint64);
+int             kmmapinfo(uint64);
 int             cangrowproc(uint64, uint64);
 void            proc_freemmaps(struct proc*, pagetable_t);
 uint64          kmmap(uint64, uint64, int);

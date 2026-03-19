@@ -116,7 +116,7 @@ sys_getmmapinfo(void)
 {
   uint64 addr;
   argaddr(0, &addr);
-  return mmapinfo(addr);
+  return kmmapinfo(addr);
 }
 
 uint64

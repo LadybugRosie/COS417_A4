@@ -467,6 +467,11 @@ proc_freemmaps(struct proc *p, pagetable_t pagetable)
   p->num_mmaps = 0;
 }
 
+// Take in uint64 addr and length, and int flags. Flags MAP_SHARED and
+// MAP_ANONYMOUS must be set. Map a shared, anonymous region of memory.
+// If MAP_FIXED is set, new region must sit at address addr; otherwise,
+// use addr as a hint for where to put the region of length length.
+// Return 0 on error and new address of memory map on success.
 uint64
 kmmap(uint64 addr, uint64 length, int flags)
 {
@@ -926,7 +931,7 @@ procdump(void)
 // pointer, which it fills with info on total_mmaps, the 
 // starting address of each, the size of each mapping, and 
 // the number of pages physically realized for all mappings.
-int mmapinfo(uint64 addr) {
+int kmmapinfo(uint64 addr) {
   struct proc *p = myproc();
   struct mmapinfo mmapinfo_tmp;
   memset(&mmapinfo_tmp, 0, sizeof(mmapinfo_tmp));

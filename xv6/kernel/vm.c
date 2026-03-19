@@ -1,10 +1,11 @@
 /*--------------------------------------------------------------------*/
 /* COS417 Assignment 4 - MMAP                                         */
-/* Author: Jonathan Liu, David Hovey                                  */
+/* Author: David Hovey, Jonathan Liu                                  */
 /* netID: jl0796, dh7965                                              */
 /* AI disclosure: Did you use AI for this assignment? Yes.            */
-/* AI explanation: We used T5 to help us understand the xv6           */
-/* kernel's page table structure and how to implement mmap.           */
+/* AI explanation: We used AI to help us understand the xv6           */
+/* kernel's page table structure and how to implement mmap,           */
+/* as well as for styling and modularity assistance.                  */
 /*--------------------------------------------------------------------*/
 
 #include "param.h"
