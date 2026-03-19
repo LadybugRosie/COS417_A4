@@ -40,6 +40,7 @@ uint64
 sys_sbrk(void)
 {
   uint64 addr;
+  uint64 newsz;
   int t;
   int n;
 
@@ -55,11 +56,12 @@ sys_sbrk(void)
     // Lazily allocate memory for this process: increase its memory
     // size but don't allocate memory. If the processes uses the
     // memory, vmfault() will allocate it.
-    if(addr + n < addr)
+    newsz = addr + n;
+    if(newsz < addr)
       return -1;
-    if(addr + n > TRAPFRAME)
+    if(cangrowproc(addr, newsz) == 0)
       return -1;
-    myproc()->sz += n;
+    myproc()->sz = newsz;
   }
   return addr;
 }
@@ -111,24 +113,29 @@ sys_uptime(void)
 uint64
 sys_getmmapinfo(void)
 {
-  // TODO: implement!
   uint64 addr;
   argaddr(0, &addr);
   return mmapinfo(addr);
-
 }
 
 uint64
 sys_mmap(void)
 {
-  // TODO: implement!
-  return 0;
+  uint64 addr;
+  uint64 length;
+  int flags;
+
+  argaddr(0, &addr);
+  argaddr(1, &length);
+  argint(2, &flags);
+
+  return kmmap(addr, length, flags);
 }
 
 uint64
 sys_munmap(void)
 {
-  // TODO: implement!
-  return 0;
+  uint64 addr;
+  argaddr(0, &addr);
+  return kmunmap(addr);
 }
-

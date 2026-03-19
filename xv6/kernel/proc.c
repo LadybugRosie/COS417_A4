@@ -26,6 +26,110 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+static void
+proc_initmmaps(struct proc *p)
+{
+  memset(p->mmaps, 0, sizeof(p->mmaps));
+  p->num_mmaps = 0;
+}
+
+static int
+ranges_overlap(uint64 start1, uint64 end1, uint64 start2, uint64 end2)
+{
+  return start1 < end2 && start2 < end1;
+}
+
+static void
+mmap_area_put(struct mmap_area *area)
+{
+  if(area == 0)
+    return;
+
+  if(area->ref_count < 1)
+    panic("mmap_area_put");
+
+  area->ref_count--;
+  if(area->ref_count == 0)
+    kfree((void*)area);
+}
+
+static struct proc_mmap*
+find_mmap_slot(struct proc *p, uint64 addr)
+{
+  for(int i = 0; i < p->num_mmaps; i++){
+    if(p->mmaps[i].addr == addr)
+      return &p->mmaps[i];
+  }
+  return 0;
+}
+
+static int
+mmap_range_ok(struct proc *p, uint64 addr, uint64 length)
+{
+  uint64 end = addr + length;
+  uint64 heap_end = PGROUNDUP(p->sz);
+
+  if(length == 0)
+    return 0;
+  if(addr % PGSIZE != 0)
+    return 0;
+  if(end < addr)
+    return 0;
+  if(addr < heap_end)
+    return 0;
+  if(end > TRAPFRAME)
+    return 0;
+
+  for(int i = 0; i < p->num_mmaps; i++){
+    uint64 map_start = p->mmaps[i].addr;
+    uint64 map_end = map_start + p->mmaps[i].area->length;
+    if(ranges_overlap(addr, end, map_start, map_end))
+      return 0;
+  }
+
+  return 1;
+}
+
+static uint64
+find_mmap_addr(struct proc *p, uint64 hint, uint64 length)
+{
+  uint64 candidate;
+
+  if((hint % PGSIZE) == 0 && mmap_range_ok(p, hint, length))
+    return hint;
+
+  if(length > TRAPFRAME)
+    return 0;
+  candidate = TRAPFRAME - length;
+
+  while(candidate >= PGROUNDUP(p->sz)){
+    uint64 min_conflict = 0;
+    int found_conflict = 0;
+
+    if(mmap_range_ok(p, candidate, length))
+      return candidate;
+
+    for(int i = 0; i < p->num_mmaps; i++){
+      uint64 map_start = p->mmaps[i].addr;
+      uint64 map_end = map_start + p->mmaps[i].area->length;
+
+      if(ranges_overlap(candidate, candidate + length, map_start, map_end)){
+        if(found_conflict == 0 || map_start < min_conflict)
+          min_conflict = map_start;
+        found_conflict = 1;
+      }
+    }
+
+    if(found_conflict == 0)
+      return 0;
+    if(min_conflict < length)
+      return 0;
+    candidate = min_conflict - length;
+  }
+
+  return 0;
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -55,6 +159,7 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+      proc_initmmaps(p);
   }
 }
 
@@ -124,6 +229,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  proc_initmmaps(p);
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -146,10 +252,6 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  // Set up memmory mapping fields
-  p->num_mappings = 0;
-  p->num_shared = 0;
-
   return p;
 }
 
@@ -159,6 +261,7 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  proc_freemmaps(p);
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -245,7 +348,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if(sz + n > TRAPFRAME) {
+    if(sz + n < sz || cangrowproc(sz, sz + n) == 0) {
       return -1;
     }
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
@@ -272,10 +375,6 @@ kfork(void)
     return -1;
   }
 
-  // Initialize child process memory variables
-  np->num_mappings = p->num_shared;
-  np->num_shared = p->num_shared; // TODO: Figure out what to do with this behaviour?
-
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -283,6 +382,10 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
+  np->num_mmaps = p->num_mmaps;
+  memmove(np->mmaps, p->mmaps, sizeof(p->mmaps));
+  for(i = 0; i < np->num_mmaps; i++)
+    np->mmaps[i].area->ref_count++;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -311,6 +414,106 @@ kfork(void)
   release(&np->lock);
 
   return pid;
+}
+
+int
+cangrowproc(uint64 oldsz, uint64 newsz)
+{
+  struct proc *p = myproc();
+
+  if(newsz > TRAPFRAME)
+    return 0;
+
+  for(int i = 0; i < p->num_mmaps; i++){
+    uint64 map_start = p->mmaps[i].addr;
+    uint64 map_end = map_start + p->mmaps[i].area->length;
+    if(ranges_overlap(oldsz, newsz, map_start, map_end))
+      return 0;
+  }
+
+  return 1;
+}
+
+void
+proc_freemmaps(struct proc *p)
+{
+  for(int i = 0; i < p->num_mmaps; i++){
+    mmap_area_put(p->mmaps[i].area);
+    p->mmaps[i].addr = 0;
+    p->mmaps[i].area = 0;
+  }
+  p->num_mmaps = 0;
+}
+
+uint64
+kmmap(uint64 addr, uint64 length, int flags)
+{
+  struct proc *p = myproc();
+  struct mmap_area *area;
+  uint64 rounded;
+  uint64 chosen;
+
+  if((flags & (MAP_SHARED | MAP_ANONYMOUS)) != (MAP_SHARED | MAP_ANONYMOUS))
+    return 0;
+  if((flags & ~MAP_SUPPORTED) != 0)
+    return 0;
+  if(length == 0)
+    return 0;
+  if(p->num_mmaps >= MAX_MMAPS)
+    return 0;
+
+  rounded = PGROUNDUP(length);
+  if(rounded < length)
+    return 0;
+  if(rounded / PGSIZE > MAX_PAGES)
+    return 0;
+
+  if(flags & MAP_FIXED){
+    if(mmap_range_ok(p, addr, rounded) == 0)
+      return 0;
+    chosen = addr;
+  } else {
+    chosen = find_mmap_addr(p, addr, rounded);
+    if(chosen == 0)
+      return 0;
+  }
+
+  area = (struct mmap_area*)kalloc();
+  if(area == 0)
+    return 0;
+  memset(area, 0, PGSIZE);
+  area->ref_count = 1;
+  area->length = rounded;
+  area->page_count = rounded / PGSIZE;
+  area->flags = flags;
+
+  p->mmaps[p->num_mmaps].addr = chosen;
+  p->mmaps[p->num_mmaps].area = area;
+  p->num_mmaps++;
+
+  return chosen;
+}
+
+int
+kmunmap(uint64 addr)
+{
+  struct proc *p = myproc();
+  struct proc_mmap *slot = find_mmap_slot(p, addr);
+  int idx;
+
+  if(slot == 0)
+    return -1;
+
+  idx = slot - p->mmaps;
+  mmap_area_put(slot->area);
+
+  for(int i = idx; i + 1 < p->num_mmaps; i++)
+    p->mmaps[i] = p->mmaps[i + 1];
+
+  p->num_mmaps--;
+  p->mmaps[p->num_mmaps].addr = 0;
+  p->mmaps[p->num_mmaps].area = 0;
+  return 0;
 }
 
 // Pass p's abandoned children to init.
@@ -702,20 +905,21 @@ procdump(void)
 // pointer, which it fills with info on total_mmaps, the 
 // starting address of each, the size of each mapping, and 
 // the number of pages physically realized for all mappings.
-int mmapinfo(uint64 addr) {
+int
+mmapinfo(uint64 addr)
+{
   struct proc *p = myproc();
   struct mmapinfo mmapinfo_tmp;
-  int curr_map = 0;
+  memset(&mmapinfo_tmp, 0, sizeof(mmapinfo_tmp));
 
-  mmapinfo_tmp.total_mmaps = p->num_mappings;
-  while (curr_map < mmapinfo_tmp.total_mmaps) {
-    mmapinfo_tmp.addr[curr_map] = (void*) p->mmappings[curr_map];
-    mmapinfo_tmp.length[curr_map] = p->length[curr_map];
-    mmapinfo_tmp.n_loaded_pages[curr_map] = p->n_loaded_pages[curr_map];
-    curr_map++;
+  mmapinfo_tmp.total_mmaps = p->num_mmaps;
+  for(int i = 0; i < p->num_mmaps; i++) {
+    mmapinfo_tmp.addr[i] = (void*) p->mmaps[i].addr;
+    mmapinfo_tmp.length[i] = p->mmaps[i].area->length;
+    mmapinfo_tmp.n_loaded_pages[i] = p->mmaps[i].area->loaded_pages;
   }
-  if (copyout(p->pagetable, addr, (char*)&mmapinfo_tmp, sizeof(struct mmapinfo))<0) {
-    return -1; 
-  } 
+
+  if(copyout(p->pagetable, addr, (char*)&mmapinfo_tmp, sizeof(struct mmapinfo)) < 0)
+    return -1;
   return 0;
 }

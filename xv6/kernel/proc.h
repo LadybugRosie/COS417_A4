@@ -108,11 +108,7 @@ struct proc {
   char name[16];               // Process name (debugging)
                                //
 
-  // mmap variables
-  uint64 mmappings[MAX_MMAPS]; // TODO: Addresses of each memory mapping (should be consistent in process since in kernel memory)
-  uint64 length[MAX_MMAPS];         // Size of each mapping
-  uint64 n_loaded_pages[MAX_MMAPS]; // Number of physically allocated pages
-  int num_mappings; // Number of memory mappings
-  int num_shared; // Number of shared mappings
+  // mmap metadata
+  struct proc_mmap mmaps[MAX_MMAPS];
+  int num_mmaps;
 };
-
