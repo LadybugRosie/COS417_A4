@@ -18,15 +18,30 @@ struct mmapinfo {
                                       // memory across all mappings
 };
 
-// Per-memory mapping state
-struct memmap {
-  int mid; // Mapping ID
-  int alloced; // If non-zero, the memory has been allocated
-  int shared; // If non-zero, the memory is shared
-  int backed; // If non-zero, memory is file-backed
-
-  uint64 ref_count; // Number of processes referencing this map
-  uint64 page_count; // Number of pages in this mapping
-  uint64 phys_pages[MAX_PAGES]; // If alloced non-zero, physical addresses of allocated pages
-
+// Shared backing object for a single mmap'd region.
+struct mmap_area {
+  uint64 ref_count;            // Number of processes referencing this mapping
+  uint64 length;               // Rounded-up mapping length in bytes
+  uint64 page_count;           // Rounded-up mapping length in pages
+  uint64 loaded_pages;         // Number of pages realized
+  uint flags;                  // Map flags for this region
+  uint phys_pages[MAX_PAGES];  // Realized physical page addresses, 0 if absent
 };
+
+// Per-process mmap metadata
+struct proc_mmap {
+  uint64 addr;             // Start address in this process
+  struct mmap_area *area;  // Shared memory backing object
+}
+
+// TODO: Remove
+//
+// Per-memory mapping state
+//struct memmap {
+  //int mid; // Mapping ID
+//
+//  uint64 ref_count; // Number of processes referencing this map
+//  uint64 page_count; // Number of pages in this mapping
+  // uint64 phys_pages[MAX_PAGES]; // If alloced non-zero, physical addresses of allocated pages
+
+//};
