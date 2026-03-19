@@ -40,17 +40,42 @@ ranges_overlap(uint64 start1, uint64 end1, uint64 start2, uint64 end2)
 }
 
 static void
+munmap_proc_pages(pagetable_t pagetable, struct proc_mmap *m)
+{
+  struct mmap_area *area = m->area;
+
+  if(area == 0)
+    return;
+
+  for(uint64 i = 0; i < area->page_count; i++){
+    if(area->phys_pages[i] != 0)
+      uvmunmap(pagetable, m->addr + i * PGSIZE, 1, 0);
+  }
+}
+
+static void
 mmap_area_put(struct mmap_area *area)
 {
   if(area == 0)
     return;
 
-  if(area->ref_count < 1)
+  acquire(&area->lock);
+  if(area->ref_count < 1){
+    release(&area->lock);
     panic("mmap_area_put");
+  }
 
   area->ref_count--;
-  if(area->ref_count == 0)
+  if(area->ref_count == 0){
+    for(uint64 i = 0; i < area->page_count; i++){
+      if(area->phys_pages[i] != 0)
+        kfree((void*)(uint64)area->phys_pages[i]);
+    }
+    release(&area->lock);
     kfree((void*)area);
+    return;
+  }
+  release(&area->lock);
 }
 
 static struct proc_mmap*
@@ -262,8 +287,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable){
+    proc_freemmaps(p, p->pagetable);
     proc_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -381,8 +408,11 @@ kfork(void)
   np->sz = p->sz;
   np->num_mmaps = p->num_mmaps;
   memmove(np->mmaps, p->mmaps, sizeof(p->mmaps));
-  for(i = 0; i < np->num_mmaps; i++)
+  for(i = 0; i < np->num_mmaps; i++){
+    acquire(&np->mmaps[i].area->lock);
     np->mmaps[i].area->ref_count++;
+    release(&np->mmaps[i].area->lock);
+  }
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -432,9 +462,10 @@ cangrowproc(uint64 oldsz, uint64 newsz)
 }
 
 void
-proc_freemmaps(struct proc *p)
+proc_freemmaps(struct proc *p, pagetable_t pagetable)
 {
   for(int i = 0; i < p->num_mmaps; i++){
+    munmap_proc_pages(pagetable, &p->mmaps[i]);
     mmap_area_put(p->mmaps[i].area);
     p->mmaps[i].addr = 0;
     p->mmaps[i].area = 0;
@@ -477,6 +508,7 @@ kmmap(uint64 addr, uint64 length, int flags)
   if(area == 0)
     return 0;
   memset(area, 0, PGSIZE);
+  initlock(&area->lock, "mmap_area");
   area->ref_count = 1;
   area->length = rounded;
   area->page_count = rounded / PGSIZE;
@@ -500,6 +532,7 @@ kmunmap(uint64 addr)
     return -1;
 
   idx = slot - p->mmaps;
+  munmap_proc_pages(p->pagetable, slot);
   mmap_area_put(slot->area);
 
   for(int i = idx; i + 1 < p->num_mmaps; i++)

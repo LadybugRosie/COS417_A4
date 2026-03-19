@@ -424,8 +424,10 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   while(got_null == 0 && max > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
+    if(pa0 == 0) {
+      if((pa0 = vmfault(pagetable, va0, 1)) == 0)
+        return -1;
+    }
     n = PGSIZE - (srcva - va0);
     if(n > max)
       n = max;
@@ -461,20 +463,68 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 uint64
 vmfault(pagetable_t pagetable, uint64 va, int read)
 {
-  uint64 mem;
   struct proc *p = myproc();
+  struct proc_mmap *m = 0;
+  struct mmap_area *area;
+  uint64 page_va;
+  uint64 page_idx;
+  uint64 mem;
+
+  (void)read;
+
+  if(va >= MAXVA)
+    return 0;
+
+  page_va = PGROUNDDOWN(va);
+
+  for(int i = 0; i < p->num_mmaps; i++){
+    uint64 start = p->mmaps[i].addr;
+    uint64 end = start + p->mmaps[i].area->length;
+    if(page_va >= start && page_va < end){
+      m = &p->mmaps[i];
+      break;
+    }
+  }
+
+  if(m != 0){
+    if(ismapped(pagetable, page_va))
+      return walkaddr(pagetable, page_va);
+
+    area = m->area;
+    page_idx = (page_va - m->addr) / PGSIZE;
+
+    acquire(&area->lock);
+    mem = area->phys_pages[page_idx];
+    if(mem == 0){
+      mem = (uint64)kalloc();
+      if(mem == 0){
+        release(&area->lock);
+        return 0;
+      }
+      memset((void *)mem, 0, PGSIZE);
+      area->phys_pages[page_idx] = (uint)mem;
+      area->loaded_pages++;
+    }
+    release(&area->lock);
+
+    if(mappages(pagetable, page_va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0){
+      if(ismapped(pagetable, page_va))
+        return walkaddr(pagetable, page_va);
+      return 0;
+    }
+    return mem;
+  }
 
   if (va >= p->sz)
     return 0;
-  va = PGROUNDDOWN(va);
-  if(ismapped(pagetable, va)) {
-    return 0;
+  if(ismapped(pagetable, page_va)) {
+    return walkaddr(pagetable, page_va);
   }
   mem = (uint64) kalloc();
   if(mem == 0)
     return 0;
   memset((void *) mem, 0, PGSIZE);
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+  if (mappages(pagetable, page_va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
     kfree((void *)mem);
     return 0;
   }

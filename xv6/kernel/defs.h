@@ -103,7 +103,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 int             mmapinfo(uint64);
 int             cangrowproc(uint64, uint64);
-void            proc_freemmaps(struct proc*);
+void            proc_freemmaps(struct proc*, pagetable_t);
 uint64          kmmap(uint64, uint64, int);
 int             kmunmap(uint64);
 
