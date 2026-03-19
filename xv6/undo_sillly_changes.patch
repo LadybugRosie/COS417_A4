@@ -1,0 +1,230 @@
+diff --git a/xv6/kernel/defs.h b/xv6/kernel/defs.h
+index 523c35b..15f93cb 100755
+--- a/xv6/kernel/defs.h
++++ b/xv6/kernel/defs.h
+@@ -103,7 +103,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+ void            procdump(void);
+ int             mmapinfo(uint64);
+ int             cangrowproc(uint64, uint64);
+-void            proc_freemmaps(struct proc*, pagetable_t);
++void            proc_freemmaps(struct proc*);
+ uint64          kmmap(uint64, uint64, int);
+ int             kmunmap(uint64);
+ 
+diff --git a/xv6/kernel/exec.c b/xv6/kernel/exec.c
+index c3b2fca..a81c199 100755
+--- a/xv6/kernel/exec.c
++++ b/xv6/kernel/exec.c
+@@ -133,8 +133,8 @@ kexec(char *path, char **argv)
+   p->sz = sz;
+   p->trapframe->epc = elf.entry;  // initial program counter = ulib.c:start()
+   p->trapframe->sp = sp; // initial stack pointer
+-  proc_freemmaps(p, oldpagetable);
+   proc_freepagetable(oldpagetable, oldsz);
++  proc_freemmaps(p);
+ 
+   return argc; // this ends up in a0, the first argument to main(argc, argv)
+ 
+diff --git a/xv6/kernel/mmap.h b/xv6/kernel/mmap.h
+index 27b2ef2..c968326 100755
+--- a/xv6/kernel/mmap.h
++++ b/xv6/kernel/mmap.h
+@@ -17,3 +17,19 @@ struct mmapinfo {
+     uint64 n_loaded_pages[MAX_MMAPS]; // Number of pages physically loaded into
+                                       // memory across all mappings
+ };
+diff --git a/xv6/kernel/proc.c b/xv6/kernel/proc.c
+index 3ad11b9..2abc045 100755
+--- a/xv6/kernel/proc.c
++++ b/xv6/kernel/proc.c
+@@ -39,43 +39,18 @@ ranges_overlap(uint64 start1, uint64 end1, uint64 start2, uint64 end2)
+   return 1 - ((end1 <= start2) || (end2 <= start1));
+ }
+ 
+-static void
+-munmap_proc_pages(pagetable_t pagetable, struct proc_mmap *m)
+-{
+-  struct mmap_area *area = m->area;
+-
+-  if(area == 0)
+-    return;
+-
+-  for(uint64 i = 0; i < area->page_count; i++){
+-    if(area->phys_pages[i] != 0)
+-      uvmunmap(pagetable, m->addr + i * PGSIZE, 1, 0);
+-  }
+-}
+-
+ static void
+ mmap_area_put(struct mmap_area *area)
+ {
+   if(area == 0)
+     return;
+ 
+-  acquire(&area->lock);
+-  if(area->ref_count < 1){
+-    release(&area->lock);
++  if(area->ref_count < 1)
+     panic("mmap_area_put");
+-  }
+ 
+   area->ref_count--;
+-  if(area->ref_count == 0){
+-    for(uint64 i = 0; i < area->page_count; i++){
+-      if(area->phys_pages[i] != 0)
+-        kfree((void*)(uint64)area->phys_pages[i]);
+-    }
+-    release(&area->lock);
++  if(area->ref_count == 0)
+     kfree((void*)area);
+-    return;
+-  }
+-  release(&area->lock);
+ }
+ 
+ static struct proc_mmap*
+@@ -287,10 +262,8 @@ freeproc(struct proc *p)
+   if(p->trapframe)
+     kfree((void*)p->trapframe);
+   p->trapframe = 0;
+-  if(p->pagetable){
+-    proc_freemmaps(p, p->pagetable);
++  if(p->pagetable)
+     proc_freepagetable(p->pagetable, p->sz);
+-  }
+   p->pagetable = 0;
+   p->sz = 0;
+   p->pid = 0;
+@@ -408,11 +381,8 @@ kfork(void)
+   np->sz = p->sz;
+   np->num_mmaps = p->num_mmaps;
+   memmove(np->mmaps, p->mmaps, sizeof(p->mmaps));
+-  for(i = 0; i < np->num_mmaps; i++){
+-    acquire(&np->mmaps[i].area->lock);
++  for(i = 0; i < np->num_mmaps; i++)
+     np->mmaps[i].area->ref_count++;
+-    release(&np->mmaps[i].area->lock);
+-  }
+ 
+   // copy saved user registers.
+   *(np->trapframe) = *(p->trapframe);
+@@ -462,10 +432,9 @@ cangrowproc(uint64 oldsz, uint64 newsz)
+ }
+ 
+ void
+-proc_freemmaps(struct proc *p, pagetable_t pagetable)
++proc_freemmaps(struct proc *p)
+ {
+   for(int i = 0; i < p->num_mmaps; i++){
+-    munmap_proc_pages(pagetable, &p->mmaps[i]);
+     mmap_area_put(p->mmaps[i].area);
+     p->mmaps[i].addr = 0;
+     p->mmaps[i].area = 0;
+@@ -508,7 +477,6 @@ kmmap(uint64 addr, uint64 length, int flags)
+   if(area == 0)
+     return 0;
+   memset(area, 0, PGSIZE);
+-  initlock(&area->lock, "mmap_area");
+   area->ref_count = 1;
+   area->length = rounded;
+   area->page_count = rounded / PGSIZE;
+@@ -532,7 +500,6 @@ kmunmap(uint64 addr)
+     return -1;
+ 
+   idx = slot - p->mmaps;
+-  munmap_proc_pages(p->pagetable, slot);
+   mmap_area_put(slot->area);
+ 
+   for(int i = idx; i + 1 < p->num_mmaps; i++)
++
+diff --git a/xv6/kernel/vm.c b/xv6/kernel/vm.c
+index 6b10438..5885e3d 100755
+--- a/xv6/kernel/vm.c
++++ b/xv6/kernel/vm.c
+@@ -424,10 +424,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+   while(got_null == 0 && max > 0){
+     va0 = PGROUNDDOWN(srcva);
+     pa0 = walkaddr(pagetable, va0);
+-    if(pa0 == 0) {
+-      if((pa0 = vmfault(pagetable, va0, 1)) == 0)
+-        return -1;
+-    }
++    if(pa0 == 0)
++      return -1;
+     n = PGSIZE - (srcva - va0);
+     if(n > max)
+       n = max;
+@@ -463,68 +461,20 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+ uint64
+ vmfault(pagetable_t pagetable, uint64 va, int read)
+ {
+-  struct proc *p = myproc();
+-  struct proc_mmap *m = 0;
+-  struct mmap_area *area;
+-  uint64 page_va;
+-  uint64 page_idx;
+   uint64 mem;
+-
+-  (void)read;
+-
+-  if(va >= MAXVA)
+-    return 0;
+-
+-  page_va = PGROUNDDOWN(va);
+-
+-  for(int i = 0; i < p->num_mmaps; i++){
+-    uint64 start = p->mmaps[i].addr;
+-    uint64 end = start + p->mmaps[i].area->length;
+-    if(page_va >= start && page_va < end){
+-      m = &p->mmaps[i];
+-      break;
+-    }
+-  }
+-
+-  if(m != 0){
+-    if(ismapped(pagetable, page_va))
+-      return walkaddr(pagetable, page_va);
+-
+-    area = m->area;
+-    page_idx = (page_va - m->addr) / PGSIZE;
+-
+-    acquire(&area->lock);
+-    mem = area->phys_pages[page_idx];
+-    if(mem == 0){
+-      mem = (uint64)kalloc();
+-      if(mem == 0){
+-        release(&area->lock);
+-        return 0;
+-      }
+-      memset((void *)mem, 0, PGSIZE);
+-      area->phys_pages[page_idx] = (uint)mem;
+-      area->loaded_pages++;
+-    }
+-    release(&area->lock);
+-
+-    if(mappages(pagetable, page_va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0){
+-      if(ismapped(pagetable, page_va))
+-        return walkaddr(pagetable, page_va);
+-      return 0;
+-    }
+-    return mem;
+-  }
++  struct proc *p = myproc();
+ 
+   if (va >= p->sz)
+     return 0;
+-  if(ismapped(pagetable, page_va)) {
+-    return walkaddr(pagetable, page_va);
++  va = PGROUNDDOWN(va);
++  if(ismapped(pagetable, va)) {
++    return 0;
+   }
+   mem = (uint64) kalloc();
+   if(mem == 0)
+     return 0;
+   memset((void *) mem, 0, PGSIZE);
+-  if (mappages(pagetable, page_va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
++  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+     kfree((void *)mem);
+     return 0;
+   }
