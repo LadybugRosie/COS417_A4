@@ -1,4 +1,3 @@
-#include "spinlock.h"
 #include "mmap.h"
 
 // Saved registers for kernel context switches.
@@ -84,22 +83,6 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-// Shared backing object for a single mmap'd region.
-struct mmap_area {
-  struct spinlock lock;       // Protects ref_count and realized-page metadata
-  uint64 ref_count;           // Number of processes referencing this mapping
-  uint64 length;              // Rounded-up mapping length in bytes
-  uint64 page_count;          // Rounded-up mapping length in pages
-  uint64 loaded_pages;        // Number of pages realized
-  uint flags;                 // Map flags for this region
-  uint phys_pages[MAX_PAGES]; // Realized physical page addresses, 0 if absent
-};
-
-// Per-process mmap metadata.
-struct proc_mmap {
-  uint64 addr;             // Start address in this process
-  struct mmap_area *area;  // Shared memory backing object
-};
 
 // Per-process state
 struct proc {

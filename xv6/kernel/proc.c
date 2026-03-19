@@ -59,9 +59,7 @@ mmap_area_put(struct mmap_area *area)
   if(area == 0)
     return;
 
-  acquire(&area->lock);
   if(area->ref_count < 1){
-    release(&area->lock);
     panic("mmap_area_put");
   }
 
@@ -71,11 +69,9 @@ mmap_area_put(struct mmap_area *area)
       if(area->phys_pages[i] != 0)
         kfree((void*)(uint64)area->phys_pages[i]);
     }
-    release(&area->lock);
     kfree((void*)area);
     return;
   }
-  release(&area->lock);
 }
 
 static struct proc_mmap*
@@ -409,9 +405,7 @@ kfork(void)
   np->num_mmaps = p->num_mmaps;
   memmove(np->mmaps, p->mmaps, sizeof(p->mmaps));
   for(i = 0; i < np->num_mmaps; i++){
-    acquire(&np->mmaps[i].area->lock);
     np->mmaps[i].area->ref_count++;
-    release(&np->mmaps[i].area->lock);
   }
 
   // copy saved user registers.
@@ -508,7 +502,6 @@ kmmap(uint64 addr, uint64 length, int flags)
   if(area == 0)
     return 0;
   memset(area, 0, PGSIZE);
-  initlock(&area->lock, "mmap_area");
   area->ref_count = 1;
   area->length = rounded;
   area->page_count = rounded / PGSIZE;
